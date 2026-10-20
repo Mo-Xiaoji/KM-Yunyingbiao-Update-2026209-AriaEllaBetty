@@ -8,11 +8,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Border, Side
 
 from update_erp_step2 import (
+    PRODUCT_SUBJECTS,
     REQUIRED_MAIN,
     append_tracking_skus,
     headers,
+    normalize_product_subjects,
     platform_sales_eligible_rows,
     prepare_tracking_data,
+    product_subject,
+    short_product_subject_cells,
 )
 
 
@@ -69,12 +73,27 @@ def main():
     assert list(prepared["平台SKU"]) == ["KEEP-BLANK-GROUP"]
     assert prepared.iloc[0]["SKU"] == "SKU-1"
 
+    assert product_subject("KM一部一组") == "KM一部一组【KM一部一组】"
+    assert product_subject("KM一部二组【KM一部二组】") == "KM一部二组【KM一部二组】"
+    assert product_subject("其他主体") == ""
+
+    sheet.cell(3, columns["主体"]).value = "KM一部一组"
+    sheet.cell(4, columns["主体"]).value = PRODUCT_SUBJECTS["KM一部二组"]
+    sheet.cell(5, columns["主体"]).value = None
+    sheet.cell(6, columns["主体"]).value = "其他主体"
+    assert normalize_product_subjects(sheet, columns) == 1
+    assert sheet.cell(3, columns["主体"]).value == PRODUCT_SUBJECTS["KM一部一组"]
+    assert sheet.cell(4, columns["主体"]).value == PRODUCT_SUBJECTS["KM一部二组"]
+    assert sheet.cell(5, columns["主体"]).value is None
+    assert sheet.cell(6, columns["主体"]).value == "其他主体"
+    assert short_product_subject_cells(sheet, columns) == []
+
     for row in (3, 4, 5, 6):
         sheet.cell(row, columns["店铺别名"]).value = "KM-US"
     assert platform_sales_eligible_rows(sheet, columns) == []
 
     sheet.cell(6, columns["店铺别名"]).value = None
-    sheet.cell(6, columns["主体"]).value = "KM一部一组"
+    sheet.cell(6, columns["主体"]).value = PRODUCT_SUBJECTS["KM一部一组"]
     assert platform_sales_eligible_rows(sheet, columns) == []
     workbook.close()
     print("Step2 source-preservation and legacy-condition regression test passed.")

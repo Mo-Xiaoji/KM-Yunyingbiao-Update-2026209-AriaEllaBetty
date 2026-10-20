@@ -24,6 +24,8 @@ Pass `--workbook <current operations workbook>` during a complete run. The runne
 
 Before matching, keep only these主体 values: `KM一部一组`, `KM一部二组`, `KM一部三组`.
 
+These short names are source-filter keys, not the stored display format. In `产品表`, write the corresponding long forms `KM一部一组【KM一部一组】`, `KM一部二组【KM一部二组】`, and `KM一部三组【KM一部三组】`. Before saving, convert any exact short-form values already present in the `主体` column to the long form; preserve blank and unrelated values.
+
 ## 3. Export产品档案
 
 1. Open 产品模块 -> 产品档案.

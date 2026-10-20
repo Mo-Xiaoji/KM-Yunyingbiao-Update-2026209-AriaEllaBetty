@@ -18,6 +18,9 @@ from openpyxl.formula.translate import Translator
 
 
 ALLOWED_GROUPS = ("KM一部一组", "KM一部二组", "KM一部三组")
+PRODUCT_SUBJECTS = {
+    subject: f"{subject}【{subject}】" for subject in ALLOWED_GROUPS
+}
 LEGACY_NAMES = ("产品表-老三(含清货淘汰)", "产品表-老三（含清货淘汰）")
 ERRORS = ("#REF!", "#VALUE!", "#N/A", "#DIV/0!", "#NAME?", "#NUM!")
 BASE_FIELDS = ("店铺别名", "主体", "运营", "备货状态")
@@ -57,6 +60,35 @@ def canonical_subject(value):
         if re.search(pattern, text):
             return subject
     return ""
+
+
+def product_subject(value):
+    """Return the required long-form subject for 产品表 writes."""
+    return PRODUCT_SUBJECTS.get(canonical_subject(value), "")
+
+
+def normalize_product_subjects(sheet, cols):
+    """Convert exact short subjects in 产品表 while preserving blanks and other values."""
+    subject_column = cols[normalized("主体")]
+    changed = 0
+    for row in range(3, sheet.max_row + 1):
+        cell = sheet.cell(row, subject_column)
+        text = clean(cell.value)
+        if text not in PRODUCT_SUBJECTS:
+            continue
+        cell.value = PRODUCT_SUBJECTS[text]
+        changed += 1
+    return changed
+
+
+def short_product_subject_cells(sheet, cols):
+    """Return 产品表 cells that still contain an exact short-form subject."""
+    subject_column = cols[normalized("主体")]
+    return [
+        sheet.cell(row, subject_column).coordinate
+        for row in range(3, sheet.max_row + 1)
+        if clean(sheet.cell(row, subject_column).value) in PRODUCT_SUBJECTS
+    ]
 
 
 def subject_mask(series):
@@ -323,7 +355,7 @@ def main():
         sku, alias = clean(source["平台SKU"]), clean(source["店铺别名"])
         if not sku or not alias or "老三" in alias:
             continue
-        candidate = {"店铺别名": alias, "主体": clean(source["主体"]), "运营": clean(source["运营"]), "备货状态": clean(source["备货状态"]), "rank": site_rank(alias)}
+        candidate = {"店铺别名": alias, "主体": product_subject(source["主体"]), "运营": clean(source["运营"]), "备货状态": clean(source["备货状态"]), "rank": site_rank(alias)}
         if sku not in platform_map or candidate["rank"] < platform_map[sku]["rank"]:
             platform_map[sku] = candidate
     sales_map = {}
@@ -357,6 +389,8 @@ def main():
                 name = f"标签{index:02d}"
                 sheet.cell(row, cols[normalized(name)]).value = sale[name] or None
 
+    subjects_normalized = normalize_product_subjects(sheet, cols)
+
     thin = Side(style="thin", color="000000")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     bordered = 0
@@ -384,6 +418,16 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(args.output)
     saved = load_workbook(args.output)
+    remaining_short_subjects = short_product_subject_cells(
+        saved["产品表"], headers(saved["产品表"])
+    )
+    if remaining_short_subjects:
+        saved.close()
+        args.output.unlink(missing_ok=True)
+        raise AssertionError(
+            "保存后产品表仍含短格式主体: "
+            + ", ".join(remaining_short_subjects[:20])
+        )
     if legacy_name and sheet_digest(saved[legacy_name]) != legacy_before:
         args.output.unlink(missing_ok=True)
         raise AssertionError("保存后产品表-老三(含清货淘汰)摘要变化，输出已删除")
@@ -403,6 +447,7 @@ def main():
         "step2Eligible": step2_eligible,
         "step2PlatformMatches": step2_platform,
         "step2SalesMatches": step2_sales,
+        "subjectsNormalizedToLongFormat": subjects_normalized,
         "platformSalesSourcesRefreshed": bool(args.platform),
         "borderedRows": bordered,
         "legacySheetUnchanged": True if legacy_name else None,
